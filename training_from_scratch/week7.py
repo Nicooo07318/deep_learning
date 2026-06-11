@@ -388,7 +388,7 @@ if __name__ == '__main__':
     test_file = os.path.join(work_dir, 'flowers_data/testfile.txt')
     val_file = os.path.join(work_dir, 'flowers_data/valfile.txt')
 
-    maxnumepochs = 5
+    maxnumepochs = 10
 
 
     
