@@ -1,0 +1,7 @@
+# Created by venv; see https://docs.python.org/3/library/venv.html
+/Scripts
+/share
+/pyvenv.cfg
+/Lib
+/Include
+/review_object_detection_metrics
