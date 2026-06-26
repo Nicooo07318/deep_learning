@@ -4,6 +4,8 @@ import PIL.Image
 import os
 import time
 import io
+import matplotlib.pyplot as plt
+import numpy as np
 
 from torch.utils.data import Dataset, DataLoader
 
@@ -104,6 +106,7 @@ def train_epoch(model,  trainloader,  criterion, device, optimizer ):
 
     #print(losses)
 
+
     return losses
 
 
@@ -155,13 +158,21 @@ def train_modelcv(dataloader_cvtrain, dataloader_cvtest ,  model ,  criterion, o
   best_acc = 0
   best_epoch =-1
 
+  mean_loss = []
+  acc_list = []
+  loss_list = []
+
   for epoch in range(num_epochs):
     print('Epoch {}/{}'.format(epoch, num_epochs - 1))
     print('-' * 10)
 
-    training_losses=train_epoch(model,  dataloader_cvtrain,  criterion,  device , optimizer )
+    training_losses =train_epoch(model,  dataloader_cvtrain,  criterion,  device , optimizer )
+    mean_loss.append(np.mean(training_losses))
+
     #scheduler.step()
-    measured_acc, measured_loss = evaluate(model, dataloader_cvtest, criterion = None, device = device)
+    measured_acc, measured_loss = evaluate(model, dataloader_cvtest, criterion = criterion, device = device)
+    acc_list.append(measured_acc)
+    loss_list.append(measured_loss)
     
     print('perfmeasure acc: ', measured_acc)
 
@@ -173,7 +184,7 @@ def train_modelcv(dataloader_cvtrain, dataloader_cvtest ,  model ,  criterion, o
         loss_at_best_acc = measured_loss
     
 
-  return best_epoch, best_acc, bestweights, loss_at_best_acc
+  return best_epoch, best_acc, bestweights, loss_at_best_acc, mean_loss, acc_list, loss_list
 
 def mode_a(model):
     model = tv.models.resnet50(weights=None)
@@ -184,7 +195,7 @@ def mode_a(model):
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     model = model.to(device)
 
-    a_best_epoch, a_best_acc, a_bestweights, a_loss = train_modelcv(
+    a_best_epoch, a_best_acc, a_bestweights, a_loss, training_loss, acc_list, loss_list = train_modelcv(
         dataloader_cvtrain = train_dataloader,
         dataloader_cvtest = val_dataloader,  
         model = model,  
@@ -193,8 +204,9 @@ def mode_a(model):
         scheduler = None, 
         num_epochs = maxnumepochs, 
         device = device)
+    
 
-    return a_best_epoch, a_best_acc, a_bestweights, a_loss
+    return a_best_epoch, a_best_acc, a_bestweights, a_loss, model, training_loss, acc_list, loss_list
 
 def mode_b(model, weights):
     weights = ResNet50_Weights.DEFAULT
@@ -206,7 +218,7 @@ def mode_b(model, weights):
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     model = model.to(device)
 
-    b_best_epoch, b_best_acc, b_bestweights, b_loss = train_modelcv(
+    b_best_epoch, b_best_acc, b_bestweights, b_loss, training_loss, acc_list, loss_list = train_modelcv(
         dataloader_cvtrain = train_dataloader,
         dataloader_cvtest = val_dataloader,  
         model = model,  
@@ -216,7 +228,7 @@ def mode_b(model, weights):
         num_epochs = maxnumepochs, 
         device = device)
 
-    return b_best_epoch, b_best_acc, b_bestweights, b_loss
+    return b_best_epoch, b_best_acc, b_bestweights, b_loss, model, training_loss, acc_list, loss_list
 
 def mode_c(model, weights):
     weights = ResNet50_Weights.DEFAULT
@@ -240,7 +252,7 @@ def mode_c(model, weights):
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     model = model.to(device)
 
-    c_best_epoch, c_best_acc, c_bestweights, c_loss = train_modelcv(
+    c_best_epoch, c_best_acc, c_bestweights, c_loss, training_loss, acc_list, loss_list = train_modelcv(
         dataloader_cvtrain = train_dataloader,
         dataloader_cvtest = val_dataloader,  
         model = model,  
@@ -250,7 +262,7 @@ def mode_c(model, weights):
         num_epochs = maxnumepochs, 
         device = device)
 
-    return c_best_epoch, c_best_acc, c_bestweights, c_loss
+    return c_best_epoch, c_best_acc, c_bestweights, c_loss, model, training_loss, acc_list, loss_list
 
 def run():
 
@@ -259,30 +271,26 @@ def run():
 
     weights = ResNet50_Weights.DEFAULT
     model_scratch = tv.models.resnet50(weights=None)
-    model = tv.models.resnet50(weights=weights)
+    model_default = tv.models.resnet50(weights=weights)
 
 
-    a_best_epoch, a_best_acc, a_bestweights, a_loss = mode_a(model=model_scratch)
-    b_best_epoch, b_best_acc, b_bestweights, b_loss = mode_b(model, weights)
-    c_best_epoch, c_best_acc, c_bestweights, c_loss = mode_c(model, weights)
+    a_best_epoch, a_best_acc, a_bestweights, a_loss, a_model, a_mean_tr_loss, a_acc_list, a_loss_list = mode_a(model=model_scratch)
+    b_best_epoch, b_best_acc, b_bestweights, b_loss, b_model, b_mean_tr_loss, b_acc_list, b_loss_list = mode_b(model_default, weights)
+    c_best_epoch, c_best_acc, c_bestweights, c_loss, c_model, c_mean_tr_loss, c_acc_list, c_loss_list = mode_c(model_default, weights)
 
+    
 
     results = {
-        'a': (a_best_acc, a_bestweights),
-        'b': (b_best_acc, b_bestweights),
-        'c': (c_best_acc, c_bestweights),
+        'a': (a_best_acc, a_bestweights, a_model),
+        'b': (b_best_acc, b_bestweights, b_model),
+        'c': (c_best_acc, c_bestweights, c_model),
     }
 
     best_mode =max(results, key=lambda k: results[k][0])
-    best_acc, best_weights = results[best_mode]
+    best_acc, best_weights, best_model = results[best_mode]
 
     print("best model: ", best_mode.upper(), 'mit acc: ', best_acc)
 
-
-    if best_mode == 'a':
-        best_model = tv.models.resnet50(weights=None)
-    elif best_mode in ('b', 'c'):
-        best_model = tv.models.resnet50(weights=ResNet50_Weights.DEFAULT)
 
 
     best_model.load_state_dict(best_weights)
@@ -293,14 +301,81 @@ def run():
 
     with torch.no_grad():
         test_loss, test_acc = evaluate(best_model, test_dataloader, criterion, device)
+        print('-' * 10)
         print('Test Accuracy: ', test_acc)
-        print('Test Loss´: ', test_loss)
+        print('Test Loss: ', test_loss)
     
 
 
 
     # plot data:
+    plot_curves(a_mean_tr_loss, 
+                b_mean_tr_loss, 
+                c_mean_tr_loss, 
+                a_loss_list, 
+                b_loss_list, 
+                c_loss_list, 
+                a_acc_list, 
+                b_acc_list, 
+                c_acc_list
+                )
 
+
+def plot_curves(a_tr_loss,
+                b_tr_loss, 
+                c_tr_loss, 
+                a_val_loss, 
+                b_val_loss, 
+                c_val_loss, 
+                a_val_acc, 
+                b_val_acc, 
+                c_val_acc
+                ):
+    fig, axes = plt.subplots(1,3, figsize=(15,5))
+
+    colors = {"A": "#378ADD", "B": "#D85A30", "C": "#1D9E75"}
+
+    # -- Plot 1: Training Loss --
+    ax = axes[0]
+    for name, tl in [("A", a_tr_loss),
+                        ("B", b_tr_loss),
+                        ("C", c_tr_loss)
+                        ]:
+        ax.plot(range(1, len(tl) +1), tl, label=f"Mode {name}",
+                color=colors[name])
+    ax.set_title("Training loss per epoch")
+    ax.set_xlabel("Epoch")
+    ax.set_ylabel("Loss")
+    ax.legend()
+    ax.grid(alpha=0.2)
+
+    
+
+    # -- Plot 2: Validation Set Loss --
+    ax = axes[1]
+    for name, vl in [("A", a_val_loss),
+                     ("B", b_val_loss),
+                     ("C", c_val_loss)]:
+        ax.plot(range(1, len(vl) +1), vl, label=f"Mode {name}", color=colors[name])
+    ax.set_title("Validation Loss per Epoch")
+    ax.set_xlabel("Epoch")
+    ax.set_ylabel("Loss")
+    ax.legend()
+    ax.grid(alpha=0.2)
+    
+    # -- Plot 3: Validation Set Accuracy --
+    ax = axes[2]
+    for name, va in [("A", a_val_acc),
+                     ("B", b_val_acc),
+                     ("C", c_val_acc)]:
+        ax.plot(range(1, len(va) +1), va, label=f"Mode {name}", color=colors[name])
+    ax.set_title("Validation Accuracy per Epoch")
+    ax.set_xlabel("Epoch")
+    ax.set_ylabel("Accuracy")
+    ax.legend()
+    ax.grid(alpha=0.2)
+
+    plt.show()
 
 
 if __name__ == '__main__':
@@ -313,7 +388,7 @@ if __name__ == '__main__':
     test_file = os.path.join(work_dir, 'flowers_data/testfile.txt')
     val_file = os.path.join(work_dir, 'flowers_data/valfile.txt')
 
-    maxnumepochs = 5
+    maxnumepochs = 10
 
 
     
